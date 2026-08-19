@@ -1,0 +1,77 @@
+# team-plus-impl-diag 導入手順
+
+Team+ MCP のデータを使って、チームの実装〜マージプロセス（コミット〜マージ）を診断し、課題マップと改善 Skills 提案を含む Markdown レポートを生成する Claude Code 向けの skill です。
+
+診断ロジックそのものは `SKILL.md` をご覧ください。このファイルは配布・導入のための手順書です。
+
+## 前提条件
+
+### 1. 診断対象 monitoring の共有設定を「全体公開」にする（必須）
+
+Team+ のチームモニタリングは、共有設定が非公開のままでは `get_monitorings` ツールの結果に出てきません。そのため、名前を指定しても診断対象を解決できず、診断が始まりません。
+
+- Team+ の画面: **チームモニタリング設定 > 対象モニタリングの「編集」 > 共有設定を「全体公開」に変更してください**
+
+### 2. Team+ MCP サーバーへの接続
+
+Claude Code の `~/.claude/settings.json` に以下を追加します（サーバー名は任意です）。
+
+```json
+{
+  "mcpServers": {
+    "team-plus": {
+      "type": "http",
+      "url": "https://mcp.findy-team.io/mcp",
+      "headers": {
+        "X-Team-Plus-Api-Key": "Team+ で発行した API キー",
+        "X-Team-Plus-Organization": "自組織の organization 名"
+      }
+    }
+  }
+}
+```
+
+API キーは Team+ の設定画面から発行してください。設定後に Claude Code を再起動し、`claude mcp list` で接続を確認してから診断を実行してください。MCP の接続は非同期のため、起動直後はツールが見えないことがあります。
+
+### 3. 個人 memory（任意）
+
+`~/.claude/team-plus-impl-diag/memory.yml` を置くと、よく使う monitoring 名や閾値を既定値にできます。**この設定が無くても、skill に同梱の `config/defaults.yml` だけで動作します。**
+
+```yaml
+# config/defaults.yml と同一スキーマです。上書きしたいキーだけ記述してください
+monitoring_name: <よく診断するチーム名>
+```
+
+データの解決順は「実行時引数 > memory.yml > config/defaults.yml」です。
+
+## インストール
+
+skill のディレクトリ一式を `~/.claude/skills/team-plus-impl-diag/` に配置してください（個人でご利用の場合）。リポジトリのメンバーで共有する場合は `<リポジトリ>/.claude/skills/` 配下でも構いません。配置後に Claude Code を再起動すると、skill の一覧に現れます。
+
+| パス | 役割 | 配布 |
+|---|---|---|
+| `SKILL.md` | 診断ロジック本体 | 必須 |
+| `config/defaults.yml` | 既定値・閾値のスキーマ | 必須 |
+| `knowledge/skill_catalog.md` | 提案の元になる知識 | 必須 |
+| `samples/` | 提案の出発点にするテンプレート（プレースホルダ入り） | 任意（診断の実行時には読み込まれません） |
+| `README.md` | このファイル | 任意 |
+
+## 使い方
+
+「実装プロセスを診断して」「マージプロセスを診断して」「impl-diag」などで起動します。
+
+| 引数 | 既定 | 説明 |
+|---|---|---|
+| monitoring_name | memory / 対話で補完 | 診断対象の monitoring 名（fuzzy 検索が可能です） |
+| period | quarter（直近 90 日） | 診断期間 |
+| start_date | 終端から逆算 | 期間開始日 YYYY-MM-DD |
+| focus | all | all / monitorings / repos / members |
+| thresholds | 既定値 | シグナル閾値の上書き（キーは `config/defaults.yml` をご覧ください） |
+
+例:
+
+- `impl-diag` — memory の monitoring を既定期間で診断します
+- 「<チーム名> の実装プロセスを診断して」
+- 「<チーム名> を focus=repos で診断して」— リポジトリ別のレビュー滞留だけを確認します（API 呼び出しを削減できます）
+
+出力は 9 章構成の Markdown レポートです。保存先を指定すると、ファイルに書き出します。
