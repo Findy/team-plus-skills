@@ -65,13 +65,13 @@ skill のディレクトリ一式を `~/.claude/skills/team-plus-impl-diag/` に
 | monitoring_name | memory / 対話で補完 | 診断対象の monitoring 名（fuzzy 検索が可能です） |
 | period | quarter（直近 90 日） | 診断期間 |
 | start_date | 終端から逆算 | 期間開始日 YYYY-MM-DD |
-| focus | all | all / monitorings / repos / members |
+| scope | all | all / monitorings / repos / members |
 | thresholds | 既定値 | シグナル閾値の上書き（キーは `config/defaults.yml` をご覧ください） |
 
 例:
 
 - `impl-diag` — memory の monitoring を既定期間で診断します
 - 「<チーム名> の実装プロセスを診断して」
-- 「<チーム名> を focus=repos で診断して」— リポジトリ別のレビュー滞留だけを確認します（API 呼び出しを削減できます）
+- 「<チーム名> を scope=repos で診断して」— リポジトリ別のレビュー滞留だけを確認します（API 呼び出しを削減できます）
 
 出力は 9 章構成の Markdown レポートです。保存先を指定すると、ファイルに書き出します。
