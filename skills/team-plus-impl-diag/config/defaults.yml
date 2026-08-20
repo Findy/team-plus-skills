@@ -1,0 +1,31 @@
+# team-plus-impl-diag の既定値
+# データ解決順: 実行時引数 > ~/.claude/team-plus-impl-diag/memory.yml > このファイル
+# memory.yml はこのファイルと同一スキーマです。上書きしたいキーだけ記述してください
+
+monitoring_name: null # 診断対象の monitoring 名（個人運用では memory 側で設定する想定）
+period: quarter # 診断期間（quarter = 直近3ヶ月。終端は実行日-2日）
+start_date: null # YYYY-MM-DD 形式。指定すると期間の起点を固定します
+scope: all # all | monitorings | repos | members
+
+# シグナル閾値の上書き。null の場合は SKILL.md 診断コアの既定値を使用します
+thresholds:
+  s1_lines_delta_pct: null # S1 既定 30（前期比 +%）
+  s2_team_ratio: null # S2 既定 2.0（team avg に対する倍率）
+  s3_share_factor: null # S3 既定 3（× 1/アクティブレビュアー数）
+  s4_hours: null # S4 既定 24（時間）
+  s5_p50_hours: null # S5 既定 8（時間）
+  s6_team_ratio: null # S6 既定 2.0（team avg に対する倍率）
+  s7_drop_pt: null # S7 既定 20（隣接月比の低下 pt）
+  s8_stddev: null # S8 既定 0.3（個人 AI 率の標準偏差）
+  s9_rate_pct: null # S9 既定 30（%）
+  s10_warn_rate_pct: null # S10 既定 30（%）。unreviewed_merge_rate がこれを超えると「注意」として報告します
+  s10_check_rate_pct: null # S10 既定 60（%）。これを超えるとプロセス不全か意図的な運用かの確認を促します
+  s11_merge_rate_pct: null # S11 既定 70（%）
+  # 共通ガードの閾値
+  bot_reviews_min: null # bot 検知 ① ② 既定 20（reviews_created の下限）
+  bot_review_time_hours: null # bot 検知 ② 既定 0.5（avg_time_to_my_review・時間）
+  bot_daily_cv_max: null # bot 検知 ③ 既定 0.25（平日稼働日の ai_pulls_count 変動係数の上限）
+  bot_daily_cv_min_days: null # bot 検知 ③ 既定 20（CV 算出に必要な平日稼働日数の下限）
+  bot_prs_median_factor: null # bot 検知 ④（補助）既定 2（稼働メンバー中央値に対する倍率）
+  auto_approve_p50_hours: null # auto-approve 前提チェック 既定 0.5（PR 全体 p50・時間）
+  auto_approve_avg_hours: null # auto-approve 前提チェック 既定 1（team avg・時間）。scope=members のみで使用
