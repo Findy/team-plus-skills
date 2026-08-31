@@ -24,8 +24,7 @@ thresholds:
   # 共通ガードの閾値
   bot_reviews_min: null # bot 検知 ① ② 既定 20（reviews_created の下限）
   bot_review_time_hours: null # bot 検知 ② 既定 0.5（avg_time_to_my_review・時間）
-  bot_daily_cv_max: null # bot 検知 ③ 既定 0.25（平日稼働日の ai_pulls_count 変動係数の上限）
+  bot_daily_cv_max: null # bot 検知 ③ 既定 0.25（平日稼働日の total_pulls_count 変動係数の上限）
   bot_daily_cv_min_days: null # bot 検知 ③ 既定 20（CV 算出に必要な平日稼働日数の下限）
   bot_prs_median_factor: null # bot 検知 ④（補助）既定 2（稼働メンバー中央値に対する倍率）
-  auto_approve_p50_hours: null # auto-approve 前提チェック 既定 0.5（PR 全体 p50・時間）
-  auto_approve_avg_hours: null # auto-approve 前提チェック 既定 1（team avg・時間）。scope=members のみで使用
+  auto_approve_p50_hours: null # auto-approve 前提チェック 既定 0.5（チーム全体 p50・時間）

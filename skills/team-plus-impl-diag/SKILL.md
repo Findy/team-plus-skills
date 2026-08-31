@@ -43,7 +43,7 @@ description: Team+ MCP のデータでチームの実装〜マージプロセス
 - 計測範囲は開発プロセスの実装フェーズ「コミット〜マージ」。指標は Team+ MCP が提供する範囲に限定する
 - アウトプットは診断レポートと Skills 提案まで。提案された Skill の実装は利用者判断（本診断のスコープ外）
 - **数値・指標は必ず Team+ MCP で取得する**。PR タイトルの文字列マッチ等、Team+ MCP 以外のデータソースからの代替推定は使用しない
-  - PR 単位データ（get_pull_requests）をクライアント側で再集計すること（S5 の p50 算出等）は、データソースが Team+ MCP のみであるため代替推定に当たらず、このルールの範囲内である
+  - Team+ MCP のレスポンスをクライアント側で再集計すること（AI 利用レポート `daily[]` の期間合算・メンバー別集約等）は、データソースが Team+ MCP のみであるため代替推定に当たらず、このルールの範囲内である
 - monitoring 名・メンバー名は fuzzy 検索で解決する（MCP サーバー側に実装済み。候補が複数提示された場合はユーザーに確認する）
 - Team+ のデータは集計遅延があり直近2日分は取得できない。期間の終端は「実行日 - 2日」とする
 
@@ -51,41 +51,43 @@ description: Team+ MCP のデータでチームの実装〜マージプロセス
 
 - 当期（cur）: 終端 = 実行日 - 2日、開始 = 終端 - 89日（stats 系の range=quarter は暦の3ヶ月ではなく **90 日固定**。開始日を含めて 90 日になるよう終端から 89 日引く。period / start_date の指定があればそれに従う）
 - 前期（prev）: 当期の直前・同じ長さの期間（開始 = 当期開始 - 90日、終端 = 当期開始 - 1日）。Δ系シグナル（S1）の比較に使う
-- 月次推移: 当期を 30 日単位で3分割する（range=month は 30 日固定）
-- AI 利用レポート（get_*_ai_usage_stats）の期間窓はサーバ側固定（実行日-2 を終端とする one/two/three_months）で、stats 系の当期と起点が最大1日ズレる。厳密な期間一致は求めず、ズレがある場合はレポートに注記する
+- 月次推移: 直近 3 つの**完結した暦月**（get_team_stat_transitions のバケット。実行中の月・終端が「実行日 - 2日」より後の月は API が返さない）。当期（90 日）とは範囲が一致しないため、レポートには両方の期間を明記する
+- AI 利用レポート（get_*_ai_usage_stats）の期間窓は暦月単位（既定は実行日-2 を終端に period 分さかのぼる。`start_date` で起点を任意の日付にアンカーできるが、窓の終端が「実行日 - 2日」以前に収まる指定しか受け付けない）。stats 系の当期（90 日固定）と完全一致する窓は指定できないため、当期の AI 率は `daily[]` を当期の日付範囲でクライアント合算して算出する
 
 ### データ取得手順
 
 | # | ツール | 呼び出し | 用途 |
 |---|---|---|---|
 | 1 | get_monitorings | 1回 | monitoring_name の解決（fuzzy） |
-| 2 | get_team_stats | cur / prev の2回（range=quarter） | S1 S4 S10 S11 と、S2 S3 S6 の team 側の値 |
-| 3 | get_team_stats | 月ごとに3回（range=month） | 月次推移章 |
+| 2 | get_team_stats | cur / prev の2回（range=quarter） | S1 S4 S10 S11 と、S2 S3 S6 の team 側の値、auto-approve 前提チェックの全体 p50 |
+| 3 | get_team_stat_transitions | 1回（months=3） | 月次推移章（直近 3 完結暦月） |
 | 4 | get_team_member_stats | cur 1回 | S2 S3 S6 のメンバー別の値 |
-| 5 | get_pull_requests | cur・ページングで全件 | S5（repo_name × lead_time_pr_to_review をリポ別に n_reviewed / p50 / p90 集計）+ auto-approve 前提チェックの全体 p50 |
-| 6 | get_team_ai_usage_stats | period=one_month / two_months / three_months の3回 | S7 S9（下記の差分法で月次 AI 率推移を構成） |
-| 7 | get_member_ai_usage_stats | メンバーごとに1回（period=three_months） | S8 |
+| 5 | get_team_repositories | 1回 | リポ一覧（repo_id）。#6 の呼び出し単位になる |
+| 6 | get_team_stats | リポごとに2回（cur・`repository_ids`=[そのリポ]。percentile_rank 省略= p50 と percentile_rank=90） | S5（リポ別 p50 / p90 / n_reviewed） |
+| 7 | get_team_ai_usage_stats | 2回（period=three_months。start_date 省略と、月次アンカー指定） | S7 S9 |
+| 8 | get_team_member_ai_usage_stats | ページ数分（period=three_months） | S8 と bot 検知 ③ |
+| 9 | get_ai_tool_impact_report | 1回（start_date=当期開始・end_date=当期終端） | AI 活用章の AI ツール別サイクルタイム（参考情報） |
 
-- 取得する stat types（#2〜4）: `prs_created` `prs_merged` `avg_lines_changed_per_pr` `lead_time_pr_to_review` `lead_time_approval_to_merge` `lead_time_to_merge` `avg_time_to_my_review` `reviews_created` `unreviewed_merge_rate`（メンバー側は S2 S3 S6 とガード判定に使う分のみ）
-- **scope 指定時はデータ取得も絞る**: 対象章に必要なツール呼び出しのみ行い（monitorings → #1〜3 / repos → #1・2・5 / members → #1・2・4・6・7）、取得しなかったデータに依存するシグナルは診断サマリに「scope 対象外」と明記する
-- **PR 単位データ（#5）の扱い**: 件数が多いと1ページ分でもコンテキストに直接展開できない。結果はファイルに保存し、スクリプト（jq / python 等）でリポ別の n_reviewed / p50 / p90 と全体 p50 を集計する。会話に載せるのは集計結果のみ。数百件を超える規模では下記「PR 単位データ収集のサブエージェント分担」に従う
-- **パーセンタイル（p50 / p90）は nearest-rank で算出する**: 昇順ソートした n 件に対し `ceil(p ÷ 100 × n)` 番目（1 始まり）の実測値を採る。線形補間は使わない（実在しない値を作らないため）。python なら `sorted(xs)[math.ceil(p/100*len(xs))-1]`。**方法を規定しないと n の小さいリポで値が食い違い、閾値 8h の境界で S5 の判定が反転しうる**
-- **母集合の違いに注意**: get_pull_requests の件数・AI 利用レポートの total_pulls_count は、stats の prs_created と母集団が異なる（前者は期間外作成の未マージ PR を含み、後者は PR 作成者だけでなくコミット contributor にも計上されるため同じ人でも prs_created より大きく出る。実測で個人単位 約 1.5 倍）。互いの数値を直接比較せず、比較した場合は注記する
+- 取得する stat types（#2〜4）: `prs_created` `prs_merged` `avg_lines_changed_per_pr` `lead_time_pr_to_review` `lead_time_approval_to_merge` `lead_time_to_merge` `avg_time_to_my_review` `reviews_created` `unreviewed_merge_rate`（メンバー側は S2 S3 S6 とガード判定に使う分のみ）。#2 の cur には `percentile_lead_time_pr_to_review` と `lead_time_pr_to_review_sample_size` も加える（percentile_rank 省略 = p50。auto-approve 前提チェックに使う）
+- **scope 指定時はデータ取得も絞る**: 対象章に必要なツール呼び出しのみ行い（monitorings → #1〜3 / repos → #1・2・5・6 / members → #1・2・4・7・8・9）、取得しなかったデータに依存するシグナルは診断サマリに「scope 対象外」と明記する
+- **リポ別 p50 / p90（#6）**: percentile 系 stat は 1 リクエストにつき 1 つの順位しか返さないため、リポごとに p50 と p90 の 2 回呼ぶ。`lead_time_pr_to_review_sample_size` は p50 側の呼び出しに同梱し、S5 のガード（n_reviewed ≥ 20）に使う。p50 側で sample_size = 0 のリポは p90 の呼び出しを省略してよい
+- **percentile はサーバ側算出**: p50 / p90 は Team+ API の percentile 系 stat（`percentile_lead_time_pr_to_review` 等）をそのまま使い、クライアント側では算出しない。サーバの算出方法（補間の有無）は公開されていないため、閾値の境界 ±10% に収まる値で判定が決まった場合はその旨をレポートに注記する
+- **母集合の違いに注意**: AI 利用レポートの total_pulls_count は、stats の prs_created と母集団が異なる（PR 作成者だけでなくコミット contributor にも計上されるため同じ人でも prs_created より大きく出る。実測で個人単位 約 1.5 倍）。互いの数値を直接比較せず、比較した場合は注記する
 - **`unreviewed_merge_rate` は % 表記**（0〜100・小数第1位まで）。`0.1` は 0.1% であり比率ではない。S10 の閾値（30 / 60）とはそのまま比較する
-- **AI 利用レポート（#6 #7）は既に monitoring スコープ**: get_team_ai_usage_stats / get_member_ai_usage_stats は `repository_ids` を指定しなくても monitoring の対象リポジトリに絞られる（未指定時は monitoring の全リポにフォールバックする）。**特定リポにさらに絞りたい場合だけ** get_team_repositories の `repo_id` を渡す。その場合は片側だけ絞ると S7 / S9 の比較が壊れるため、team 側（#6）とメンバー側（#7）に同じ ID を渡す
-- **メンバー別 total_pulls_count は合算しない**: メンバー別値は PR 作成者だけでなくコミット contributor にも紐づくため、1 つの PR が複数メンバーに計上される。メンバー合計はチーム値（#6）を必ず上回り（実測 1.1〜2.0 倍）、比率としての意味を持たない。S8 は個人ごとの AI 率（ai ÷ total）だけを使い、チーム値との合算・突き合わせはしない
-- **月次 AI 率の差分法（#6）**: AI 利用レポートの期間は one/two/three_months 固定で前期間比が直接取れないため、3回の呼び出し結果の差分から月次値を構成する。直近月 = one_month の値、2ヶ月前 = two_months − one_month、3ヶ月前 = three_months − two_months（ai_pulls_count・total_pulls_count それぞれ）。各月の AI 率 = ai ÷ total。daily[] は急落時期の特定の補助に使う
+- **AI 利用レポート（#7 #8）は既に monitoring スコープ**: get_team_ai_usage_stats / get_team_member_ai_usage_stats は `repository_ids` を指定しなくても monitoring の対象リポジトリに絞られる（未指定時は monitoring の全リポにフォールバックする）。**特定リポにさらに絞りたい場合だけ** get_team_repositories の `repo_id` を渡す。その場合は片側だけ絞ると S7 / S9 の比較が壊れるため、team 側（#7）とメンバー側（#8）に同じ ID を渡す
+- **メンバー別 total_pulls_count は合算しない**: メンバー別値は PR 作成者だけでなくコミット contributor にも紐づくため、1 つの PR が複数メンバーに計上される。メンバー合計はチーム値（#7）を必ず上回り（実測 1.1〜2.0 倍）、比率としての意味を持たない。S8 は個人ごとの AI 率（ai ÷ total）だけを使い、チーム値との合算・突き合わせはしない
+- **当期 AI 率と月次 AI 率（#7）**: 1 回目は start_date 省略・period=three_months で呼び、`daily[]`（date / total_pulls_count / ai_pulls_count）を当期の日付範囲でクライアント合算して当期のチーム AI 率（S9）を出す（窓が当期より数日広いため total_* をそのまま使わない）。2 回目は #3 が返した最初のバケット月の月初を start_date に渡して period=three_months で呼び、`daily[]` を暦月で合算して月次 AI 率（S7）を出す。これで月次 AI 率のバケットが #3 の月次推移と完全に一致する。daily[] は急落時期の特定の補助にも使う
+- **メンバー別 AI 利用データ（#8）**: 1 回で全メンバーを取得できるが、メンバーごとに period 日数分の `daily[]` が付くためレスポンスはメンバー数 × 日数で膨らむ。メンバー数 × 日数が目安 1,000 を超える場合は下記「メンバー別 AI 利用データ収集のサブエージェント分担」に従う。超えない場合も per_page を絞ってページングしてよい（`pagination` の total_pages / per_page を読む）
 - AI 率 = total_ai_pulls_count ÷ total_pulls_count（0 除算に注意。分母 0 は「判定不能」）
 
-### PR 単位データ収集のサブエージェント分担
+### メンバー別 AI 利用データ収集のサブエージェント分担
 
-get_pull_requests の全件収集はページ数が多く（実測で 1 チーム 5〜30 ページ）、メインコンテキストを圧迫する。以下の分担で実行する。
+get_team_member_ai_usage_stats（#8）はメンバーごとに period 日数分の `daily[]` を返すため、メンバー数 × 日数が大きい monitoring（目安 1,000 超。例: 12 名 × 92 日）ではレスポンスがメインコンテキストを圧迫する。以下の分担で実行する。
 
-- 収集用サブエージェントに**ページ範囲を割り当てて並列実行**し、各エージェントは取得結果を1ページ1ファイルで書き出す。メインには「書き出したファイルパスと件数」だけを返させ、PR 本文をメインに載せない
-- 複数チームを同時に診断する場合は「統計 / AI 収集」と「PR 収集」でエージェントを分け、チーム単位に並列化する（実測: 5 チーム・API 161 回を 10 体で処理）
-- 集計はメイン側でスクリプトを1回走らせ、リポ別 n_reviewed / p50 / p90 と全体 p50 を出す
-- **中断耐性**: セッション制限等で収集が中断しても、書き出し済みページはそのまま再利用できる。再開時は未取得ページのみを取り直す
-- **打ち切ったら必ず注記する**: ページを打ち切った場合、未取得の件数・欠落する期間（sort が `source_merged_at desc` のため落ちるのは期間の最古側）・それでも判定結果が変わらないと言える根拠をレポートに書く
+- 収集用サブエージェントにページを割り当てて実行し、`daily[]` の生データをメインに返させない。メインに返すのは**メンバーごとの集約値のみ**: node_id / name / total_ai_pulls_count / total_pulls_count / 平日稼働日数（下記 bot 検知 ③ の母数）/ 平日稼働日の total_pulls_count の変動係数（③ の算出規定に従う）
+- S8 の判定・bot 検知はメイン側で集約値から行う
+- 複数チームを同時に診断する場合はチーム単位に並列化する
+- **中断耐性**: 収集が中断してもページ単位で再開できる。取得済みページの集約値はそのまま再利用し、未取得ページのみを取り直す。打ち切った場合は未取得メンバー数をレポートに注記する
 
 ### シグナル定義（v1: 11個）
 
@@ -97,7 +99,7 @@ get_pull_requests の全件収集はページ数が多く（実測で 1 チー�
 | S2 | individual-review-latency | レビュー滞留 | 個人 lead_time_pr_to_review > team avg × 2（s2_team_ratio） | 個人 prs_created ≥ 20。auto-approve 前提チェック（下記）。レポートは上位3名まで |
 | S3 | review-load-imbalance | レビュー負荷・偏在 | 個人の reviews_created share > 3 × (1 ÷ アクティブレビュアー数)（s3_share_factor） | アクティブレビュアー（reviews_created > 0）が5名以上。人数・share とも **bot 除外後**の母数で数える |
 | S4 | approval-to-merge-delay | レビュー滞留 | lead_time_approval_to_merge > 24h（s4_hours) | prs_merged ≥ 20 |
-| S5 | repo-review-latency | レビュー滞留 | リポ別 p50 lead_time_pr_to_review > 8h（s5_p50_hours） | リポのレビュー済み PR 数 ≥ 20。auto-approve 前提チェック（下記） |
+| S5 | repo-review-latency | レビュー滞留 | リポ別 p50 lead_time_pr_to_review > 8h（s5_p50_hours） | リポのレビュー済み PR 数（lead_time_pr_to_review_sample_size）≥ 20。auto-approve 前提チェック（下記） |
 | S6 | reviewer-overload | レビュー負荷・偏在 | 個人 avg_time_to_my_review > team avg × 2（s6_team_ratio） | team avg ≥ 5h **かつ 個人 reviews_created ≥ 20**。個人値 > 72h は放置されたレビュー依頼の可能性を注記 |
 | S7 | ai-usage-drop | AI 活用 | 月次 AI 率が隣接月比 -20pt 以上低下（s7_drop_pt） | AI 系共通前提（下記） |
 | S8 | ai-usage-gap | AI 活用 | 個人 AI 率の stddev > 0.3（s8_stddev）、または 0% メンバーが2名以上 | 0% 判定は total_pulls_count ≥ 10 のメンバーのみ。stddev・0% メンバー数とも **bot 除外後**の母数で算出。AI 系共通前提 |
@@ -111,14 +113,13 @@ get_pull_requests の全件収集はページ数が多く（実測で 1 チー�
 - bot / 非人間アカウントは下記「bot 検知と除外」に従って検知し、メンバー別シグナル（S2 / S3 / S6 / S8）の母数から除外する
 - 新設チーム等で prev 期間のデータが無い場合、Δ系（S1）は判定せず「取れていない情報」に分類する
 - **AI 系共通前提（S7〜S9）**: チームの total_pulls_count > 0 を判定の前提とする。満たさない場合は「0%」ではなく「判定不能」と診断する
-- **auto-approve 前提チェック**: レビューリードタイム系（S2 / S5）は「レビューが実質行われている」ことを前提とする。以下に該当する場合は判定せず、auto-approve / bot レビュー文化の可能性をレポートに注記する
-  - PR 単位データ（#5）を取る scope（all / repos）: 判定対象 PR 全体の p50 lead_time_pr_to_review < 0.5h（auto_approve_p50_hours）**のみで判定する**。team avg 条件は使わない
-  - PR 単位データを取らない scope（members）: p50 が取れないため team avg lead_time_pr_to_review < 1h（auto_approve_avg_hours）で代用し、「p50 による確認ができていない」旨を注記する
-  - **p50 があるときに avg 条件を OR で足さない理由**: リードタイム分布は右に裾を引くため avg ≥ p50 がほぼ常に成立する。avg 条件を足すと「レビューは実際に行われているが平均が小さいだけの速いチーム」を誤って判定対象外にする（偽陰性）。実測 7 チームでも avg 条件が単独で結論を決めたケースは無く、該当した 1 チームは p50 条件にも同時に該当していた
+- **auto-approve 前提チェック**: レビューリードタイム系（S2 / S5）は「レビューが実質行われている」ことを前提とする。チーム全体の p50 lead_time_pr_to_review（#2 cur の `percentile_lead_time_pr_to_review`）< 0.5h（auto_approve_p50_hours）**のみで判定する**。該当する場合は S2 / S5 を判定せず、auto-approve / bot レビュー文化の可能性をレポートに注記する
+  - p50 は #2 で取得するため、どの scope でもこのチェックを同じ基準で行える
+  - **team avg での代用・OR 追加をしない理由**: リードタイム分布は右に裾を引くため avg ≥ p50 がほぼ常に成立する。avg 条件を使うと「レビューは実際に行われているが平均が小さいだけの速いチーム」を誤って判定対象外にする（偽陰性）。実測 7 チームでも avg 条件が単独で結論を決めたケースは無かった
 
 ### bot 検知と除外
 
-メンバー別データ（#4）の取得後に判定する。条件は**単独条件**（①〜③。1 つ成立で bot とみなす）と**補助条件**（④ ⑤。単独では除外せず、2 つ揃った場合にのみ bot とみなす）に分かれる。
+メンバー別データ（#4・#8）の取得後に判定する。条件は**単独条件**（①〜③。1 つ成立で bot とみなす）と**補助条件**（④ ⑤。単独では除外せず、2 つ揃った場合にのみ bot とみなす）に分かれる。
 
 **Team+ の member が持つ bot フラグ（bool）は使わない。** 実データで PR 量産型の bot アカウントが `bot: false` になっている例を確認しており、フラグを信じると検知漏れが起きる。行動パターン（PR とレビューの比率・レビュー着手時間・日次件数の分散）から判定する。
 
@@ -126,18 +127,18 @@ get_pull_requests の全件収集はページ数が多く（実測で 1 チー�
 |---|---|---|---|
 | ① | レビュー専業型 | 単独 | prs_created = 0 かつ reviews_created ≥ 20（bot_reviews_min） |
 | ② | 機械的即レビュー型 | 単独 | avg_time_to_my_review < 0.5h（bot_review_time_hours）かつ reviews_created ≥ 20（bot_reviews_min） |
-| ③ | 日次件数一定型 | 単独 | AI 利用レポート `daily[]` の平日稼働日の変動係数 < 0.25（bot_daily_cv_max）。算出方法は下記 |
+| ③ | 日次件数一定型 | 単独 | メンバー別 AI 利用データ `daily[]` の平日稼働日の変動係数 < 0.25（bot_daily_cv_max）。算出方法は下記 |
 | ④ | PR 量産型 | 補助 | prs_created が稼働メンバー（prs_created > 0）の中央値の 2 倍超（bot_prs_median_factor） |
 | ⑤ | 名前パターン | 補助 | 表示名に `bot` / `agent` / `approve` / `claude` / `copilot` / `devin` / `現場猫` 等を含む。組織ごとに命名が異なる |
 
 **③ の変動係数（CV）の算出**（規定しないと run 間で値が食い違うため厳密に定める）:
 
-- 対象は get_member_ai_usage_stats（period=three_months）の `daily[]` の `ai_pulls_count`
-- 母数は**平日（月〜金）かつ `ai_pulls_count > 0` の日**。土日と 0 件の平日は除外する（祝日は除外しない。国別設定に判定を依存させないため）
+- 対象は get_team_member_ai_usage_stats（#8・period=three_months）の `daily[]` の `total_pulls_count`（AI 以外も含む全 PR の日次件数）
+- 母数は**平日（月〜金）かつ `total_pulls_count > 0` の日**。土日と 0 件の平日は除外する（祝日は除外しない。国別設定に判定を依存させないため）
 - 母数が 20 日未満（bot_daily_cv_min_days）のメンバーは ③ を**判定不能**とし、発火扱いにしない
 - CV = 母集団標準偏差（n で割る）÷ 平均。標本標準偏差（n−1）は使わない
 - 閾値 0.25 は実測由来の暫定値（bot 0.158 に対し人間 0.359〜1.037）。ただし **CV 0.53 の bot 実例**があり CV 単独では分離できないケースがあるため、④ ⑤ の補助 2 条件による検知と併用する
-- **制約**: CV は `ai_pulls_count`（AI 由来 PR の日次件数）で算出しているため、AI 率が低いメンバーほど母数が減り判定不能になりやすい。この制約はレポートに注記する
+- **注意**: 閾値と上記の実測値は、`daily[]` に `total_pulls_count` が無かった時期の `ai_pulls_count` ベースの実測に由来する。total ベースでは AI 率が低いメンバーでも母数が確保でき判定不能が減る一方、CV の値自体は変わりうる。閾値の境界 ±0.1 に収まる判定はレポートに注記し、実測が蓄積したら閾値を再校正する
 
 検知したメンバーの扱い:
 
@@ -190,6 +191,7 @@ get_pull_requests の全件収集はページ数が多く（実測で 1 チー�
 2. 診断対象 monitoring の選定方法(指定された名前・fuzzy 解決の結果。同一チームに複数 monitoring がある場合はどれを選んだか）
 3. プロバイダ別の AI 検出対応状況（該当プロバイダのみ）
 4. データ集計遅延により直近2日を除外していること
+5. p50 / p90 は Team+ API のサーバ側 percentile 集計値であること（算出方法の詳細は非公開）
 
 章立て（scope=all。monitorings → 1〜3章 / repos → 1・5章 / members → 1・4・6章に絞る）。**見出しは「見出し文字列」列の値をそのまま使い、説明を書き足さない**（`## 1. 診断サマリ` の形式。診断間の比較に見出しを使うため）:
 
@@ -197,10 +199,10 @@ get_pull_requests の全件収集はページ数が多く（実測で 1 チー�
 |---|---|---|
 | 1 | 診断サマリ | 発火シグナル一覧 |
 | 2 | スナップショット | 当期のチーム統計 |
-| 3 | 月次推移 | 当期を30日単位で3分割した推移 |
+| 3 | 月次推移 | 直近 3 完結暦月の推移 |
 | 4 | メンバー別 | メンバー別の指標とシグナル該当者 |
 | 5 | リポジトリ別 | リポ別 n_reviewed / p50 / p90 |
-| 6 | AI 活用 | 月次推移・メンバー分布 |
+| 6 | AI 活用 | 月次推移・メンバー分布・AI ツール別サイクルタイム（#9。シグナル判定には使わない参考情報。検出は author / co-author / ブランチ名パターンによる推定で、複数ツール検出 PR は各ツールに重複計上される。期間内にマージ済み AI PR が無いツールは返されず、母集団が空のメトリクスは 0.0 で返るため、値の解釈に注記を添える） |
 | 7 | 課題マップ | 発火シグナルを課題ラベルに変換したもの |
 | 8 | Skills 提案 | propose_skills の出力 |
 | 9 | 取れていない情報 | 判定できなかったもの・判定対象外だが見落とすと診断が歪むもの |
@@ -228,12 +230,12 @@ get_pull_requests の全件収集はページ数が多く（実測で 1 チー�
 
 判定できなかったもの・判定対象外だが見落とすと診断が歪むものを列挙する。いずれも**発火扱いにはしない**。
 
-1. **判定対象外だが指標が極端なリポジトリ**: n_reviewed < 20 で S5 の判定対象外だが、p50 が s5_p50_hours を超える、または p90 が s5_p50_hours の 2 倍を超えるリポ。誤発火防止のガードは維持したまま、テールの存在だけを可視化する
+1. **判定対象外だが指標が極端なリポジトリ**: n_reviewed（lead_time_pr_to_review_sample_size）< 20 で S5 の判定対象外だが、p50 が s5_p50_hours を超える、または p90 が s5_p50_hours の 2 倍を超えるリポ。誤発火防止のガードは維持したまま、テールの存在だけを可視化する
 2. **同名・重複メンバーレコード**: 表示名が同一、または正規化（大小文字・空白・姓名順の入れ替えを無視）すると一致する node_id が複数あるメンバー。活動があると同一人物の指標が分割され、個人シグナルが過小評価される。該当 node_id と各々の活動量を列挙し、Team+ 側の設定見直しを促す（**統合はしない**。正しい統合は Team+ 側の設定作業）
 3. bot 判定の境界例（除外しなかったもの）と、bot 検知時の team avg の歪み
 4. prev 期間のデータ欠損による Δ系（S1）の未判定
 5. AI 系の判定不能（total_pulls_count = 0・Backlog 等）
-6. scope 指定により取得しなかったデータに依存するシグナル、および scope=members 時に p50 での auto-approve 確認ができていないこと
+6. scope 指定により取得しなかったデータに依存するシグナル
 
 ### エラー・欠損時の原則
 
