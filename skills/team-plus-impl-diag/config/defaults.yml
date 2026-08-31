@@ -21,6 +21,8 @@ thresholds:
   s10_warn_rate_pct: null # S10 既定 30（%）。unreviewed_merge_rate がこれを超えると「注意」として報告します
   s10_check_rate_pct: null # S10 既定 60（%）。これを超えるとプロセス不全か意図的な運用かの確認を促します
   s11_merge_rate_pct: null # S11 既定 70（%）
+  s12_drop_pt: null # S12 既定 30（個人の月次 AI 率の隣接月比低下 pt）
+  s12_min_monthly_pulls: null # S12 既定 10（比較する両月の個人 total_pulls_count の下限）
   # 共通ガードの閾値
   bot_reviews_min: null # bot 検知 ① ② 既定 20（reviews_created の下限）
   bot_review_time_hours: null # bot 検知 ② 既定 0.5（avg_time_to_my_review・時間）
