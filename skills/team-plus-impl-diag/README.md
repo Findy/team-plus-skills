@@ -6,6 +6,10 @@ Team+ MCP のデータを使って、チームの実装〜マージプロセス�
 
 ## 前提条件
 
+### 0. Team+ MCP のツールセット（2026年8月末時点以降）
+
+本 skill の診断コアは、Team+ MCP の 2026年8月末時点のツールセットを前提とします。具体的には percentile 対応の stats 系ツール（`percentile_lead_time_pr_to_review` / `*_sample_size` / `percentile_rank`）、`get_team_stat_transitions`、`get_team_member_ai_usage_stats`、`get_ai_tool_impact_report`、AI 利用レポートの `start_date` パラメータと `daily[].total_pulls_count` を使用します。Team+ MCP はホスティド提供のため、通常は追加作業なしで利用できます。
+
 ### 1. 診断対象 monitoring の共有設定を「全体公開」にする（必須）
 
 Team+ のチームモニタリングは、共有設定が非公開のままでは `get_monitorings` ツールの結果に出てきません。そのため、名前を指定しても診断対象を解決できず、診断が始まりません。
