@@ -20,7 +20,7 @@ description: Team+ MCP のデータでチームの実装〜マージプロセス
 | 引数 | 必須 | 既定 | 説明 |
 |---|---|---|---|
 | monitoring_name | ○（データ解決順で補完可） | - | 診断対象の monitoring 名（fuzzy 検索可） |
-| period | - | quarter（直近 90 日） | 診断期間 |
+| period | - | quarter（直近 90 日） | 診断期間。**`quarter` のみ受け付ける**（下記「期間の定義」） |
 | start_date | - | -（終端から逆算） | 期間開始日 YYYY-MM-DD |
 | scope | - | all | all / monitorings / repos / members |
 | thresholds | - | コア定義の既定値 | シグナル閾値の上書き（キーは config/defaults.yml 参照） |
@@ -60,6 +60,7 @@ description: Team+ MCP のデータでチームの実装〜マージプロセス
 
 **stats 系（#2 #4 #6）の窓は開始日でしか指定できない**。`start_date` は必須パラメータで、窓は `start_date` から `range` の長さ分（`quarter` なら 90 日）。終端を渡すパラメータは無いため、当期・前期とも「開始日」を計算して渡す。`range` の選択肢は day（1日）/ week（7日）/ month（30日）/ quarter（90日）/ end_of_month（start_date からその月の末日まで）。
 
+- **period は `quarter`（90 日）のみ受け付ける**。他の値が指定された場合は診断を始めず、理由を説明してユーザーに確認する。シグナルのガード（prs_created ≥ 50 / 20、n_reviewed ≥ 20 等）は 90 日相当の母数で校正されており、30 日窓ではほぼ全シグナルが母数不足で判定不能になる。加えて AI 利用レポートの最小 period は one_month で、暦月加算では 2 月をまたぐ 30 日窓を包含できず S7 / S9 / S12 の窓が作れない。**期間をずらしたい場合は period ではなく `start_date` を使う**
 - 当期（cur）: 終端 = 実行日 - 2日、開始 = 終端 - 89日（`range=quarter` は暦の3ヶ月ではなく **90 日固定**。開始日を含めて 90 日になるよう終端から 89 日引く）
 - 前期（prev）: 当期の直前・同じ長さの期間（開始 = 当期開始 - 90日、終端 = 当期開始 - 1日）。Δ系シグナル（S1）の比較に使う。#2 の prev はこの開始日を `start_date` に渡して `range=quarter` で呼ぶ（実測: `start_date=2026-03-04` + `range=quarter` → `2026-03-04..2026-06-01`）
 - `start_date` 引数が指定された場合: それを当期開始として扱い、当期終端 = 当期開始 + 89日、前期は上記の定義で当期開始から逆算する。当期終端が「実行日 - 2日」より後になる指定はデータが揃わないため受け付けず、ユーザーに確認する

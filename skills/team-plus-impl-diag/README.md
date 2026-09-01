@@ -80,7 +80,7 @@ skill のディレクトリ一式を `~/.claude/skills/team-plus-impl-diag/` に
 | 引数 | 既定 | 説明 |
 |---|---|---|
 | monitoring_name | memory / 対話で補完 | 診断対象の monitoring 名（fuzzy 検索が可能です） |
-| period | quarter（直近 90 日） | 診断期間 |
+| period | quarter（直近 90 日） | 診断期間。現時点では `quarter` のみ対応です（期間をずらす場合は start_date をお使いください） |
 | start_date | 終端から逆算 | 期間開始日 YYYY-MM-DD |
 | scope | all | all / monitorings / repos / members |
 | thresholds | 既定値 | シグナル閾値の上書き（キーは `config/defaults.yml` をご覧ください） |
