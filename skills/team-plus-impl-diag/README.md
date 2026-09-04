@@ -37,6 +37,18 @@ Claude Code の `~/.claude/settings.json` に以下を追加します（サー�
 
 API キーは Team+ の設定画面から発行してください。設定後に Claude Code を再起動し、`claude mcp list` で接続を確認してから診断を実行してください。MCP の接続は非同期のため、起動直後はツールが見えないことがあります。
 
+本 skill は `allowed-tools` を宣言していません。skill の `allowed-tools` はツールを制限するものではなく「skill を起動したターンだけ有効な事前許可」で、MCP の許可ルールはサーバー名をリテラルで書く必要があるため、サーバー名を任意にしている本 skill では宣言しても多くの環境で一致しないためです。毎回の許可プロンプトを省きたい場合は、`~/.claude/settings.json` の `permissions.allow` にご自分で付けたサーバー名を追加してください。こちらはセッション全体で有効です。
+
+```json
+{
+  "permissions": {
+    "allow": ["mcp__team-plus"]
+  }
+}
+```
+
+本 skill が使う Team+ MCP のツールはすべて読み取り系（`get_*`）です。ツール単位で絞りたい場合は `"mcp__team-plus__get_team_stats"` のように個別に列挙することもできます。
+
 ### 3. 個人 memory（任意）
 
 `~/.claude/team-plus-impl-diag/memory.yml` を置くと、よく使う monitoring 名や閾値を既定値にできます。**この設定が無くても、skill に同梱の `config/defaults.yml` だけで動作します。**
@@ -57,6 +69,7 @@ skill のディレクトリ一式を `~/.claude/skills/team-plus-impl-diag/` に
 | `SKILL.md` | 診断ロジック本体 | 必須 |
 | `config/defaults.yml` | 既定値・閾値のスキーマ | 必須 |
 | `knowledge/skill_catalog.md` | 提案の元になる知識 | 必須 |
+| `knowledge/design_notes.md` | 閾値・判定方式の設計根拠 | 任意（診断の実行時には読み込まれません） |
 | `samples/` | 提案の出発点にするテンプレート（プレースホルダ入り） | 任意（診断の実行時には読み込まれません） |
 | `README.md` | このファイル | 任意 |
 
@@ -67,7 +80,7 @@ skill のディレクトリ一式を `~/.claude/skills/team-plus-impl-diag/` に
 | 引数 | 既定 | 説明 |
 |---|---|---|
 | monitoring_name | memory / 対話で補完 | 診断対象の monitoring 名（fuzzy 検索が可能です） |
-| period | quarter（直近 90 日） | 診断期間 |
+| period | quarter（直近 90 日） | 診断期間。現時点では `quarter` のみ対応です（期間をずらす場合は start_date をお使いください） |
 | start_date | 終端から逆算 | 期間開始日 YYYY-MM-DD |
 | scope | all | all / monitorings / repos / members |
 | thresholds | 既定値 | シグナル閾値の上書き（キーは `config/defaults.yml` をご覧ください） |
@@ -78,4 +91,4 @@ skill のディレクトリ一式を `~/.claude/skills/team-plus-impl-diag/` に
 - 「<チーム名> の実装プロセスを診断して」
 - 「<チーム名> を scope=repos で診断して」— リポジトリ別のレビュー滞留だけを確認します（API 呼び出しを削減できます）
 
-出力は 9 章構成の Markdown レポートです。保存先を指定すると、ファイルに書き出します。
+出力は Markdown レポートです（scope=all で 9 章構成。scope を指定すると 3〜6 章が絞られ、1・2・7・8・9 章は常に出力されます）。保存先を指定すると、ファイルに書き出します。

@@ -3,7 +3,7 @@
 # memory.yml はこのファイルと同一スキーマです。上書きしたいキーだけ記述してください
 
 monitoring_name: null # 診断対象の monitoring 名（個人運用では memory 側で設定する想定）
-period: quarter # 診断期間（quarter = 直近3ヶ月。終端は実行日-2日）
+period: quarter # 診断期間（quarter = 直近 90 日。終端は実行日-2日）。現時点は quarter のみ対応
 start_date: null # YYYY-MM-DD 形式。指定すると期間の起点を固定します
 scope: all # all | monitorings | repos | members
 
