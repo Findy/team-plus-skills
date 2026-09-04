@@ -111,9 +111,9 @@ get_team_member_ai_usage_stats（#8）はメンバーごとに period 日数分�
 - 複数チームを同時に診断する場合はチーム単位に並列化する
 - **中断耐性**: ページごとの集約値は作業用ファイルに書き出し、メインのコンテキストだけに保持しない（セッションの再開や要約で失われると再開できないため）。収集が中断してもページ単位で再開でき、取得済みページの集約値はそのまま再利用して未取得ページのみを取り直す。打ち切った場合は未取得メンバー数をレポートに注記する
 
-### シグナル定義（v2: 12個）
+### シグナル定義（v3: 12個）
 
-閾値は複数組織の実データ探索に基づく暫定値。thresholds で上書き可能（括弧内はキー名）。v2 で S12 を追加した（それ以外のシグナルの定義・閾値は v1 から不変）。
+閾値は複数組織の実データ探索に基づく暫定値。thresholds で上書き可能（括弧内はキー名）。シグナルの構成と既定閾値は v2 から不変（S12 は v2 で追加）だが、v3 では S8 の stddev の母集団、S12 の月次バケットの扱い、トレンド分類の単調性・スパイク判定の比較対象といった**指標の算出規定**を確定させた。同じ入力でも v2 とは発火集合が変わり得るため版を上げている（下記「版を上げる条件」）。
 
 | ID | 課題ラベル | カテゴリ | 定義・閾値 | 判定ガード |
 |---|---|---|---|---|
@@ -124,7 +124,7 @@ get_team_member_ai_usage_stats（#8）はメンバーごとに period 日数分�
 | S5 | repo-review-latency | レビュー滞留 | リポ別 p50 lead_time_pr_to_review > 8h（s5_p50_hours） | リポのレビュー済み PR 数（lead_time_pr_to_review_sample_size）≥ 20。auto-approve 前提チェック（下記） |
 | S6 | reviewer-overload | レビュー負荷・偏在 | 個人 avg_time_to_my_review > team avg × 2（s6_team_ratio） | team avg ≥ 5h **かつ 個人 reviews_created ≥ 20**。個人値 > 72h は放置されたレビュー依頼の可能性を注記 |
 | S7 | ai-usage-drop | AI 活用 | 月次 AI 率が隣接月比 -20pt 以上低下（s7_drop_pt）。判定は直近 3 バケットの隣接比のみ | AI 系共通前提（下記） |
-| S8 | ai-usage-gap | AI 活用 | 個人 AI 率の stddev > 0.3（s8_stddev）、または 0% メンバーが2名以上 | 0% 判定は total_pulls_count ≥ 10 のメンバーのみ。stddev・0% メンバー数とも **bot 除外後**の母数で算出。AI 系共通前提 |
+| S8 | ai-usage-gap | AI 活用 | 個人 AI 率の stddev > 0.3（s8_stddev）、または 0% メンバーが2名以上 | stddev・0% 判定とも **bot 除外後**かつ total_pulls_count ≥ 10 の母集団で算出。AI 系共通前提 |
 | S9 | low-ai-usage | AI 活用 | チーム AI 率 < 30%（s9_rate_pct） | AI 系共通前提 |
 | S10 | unreviewed-merges | レビュー形骸化 | unreviewed_merge_rate > 30% で注意（s10_warn_rate_pct）、> 60% でプロセス不全か意図的運用かの確認を促す（s10_check_rate_pct） | - |
 | S11 | closed-without-merge | PR 設計・分割 | prs_merged ÷ prs_created < 70%（s11_merge_rate_pct） | - |
@@ -273,7 +273,7 @@ get_team_member_ai_usage_stats（#8）はメンバーごとに period 日数分�
 「1. 診断サマリ」の先頭には、以下 3 行を**この書式のまま**必ず出力する（診断間の比較を機械的に行うため）。
 
 ```
-シグナルセット: v2
+シグナルセット: v3
 発火シグナル ID 集合: {S2, S6}
 判定対象外: {S5}
 ```
