@@ -7,7 +7,7 @@
 - GitHub の [Report a vulnerability](https://github.com/Findy/team-plus-skills/security/advisories/new)（非公開のセキュリティアドバイザリ）
 - Findy Team+ の弊社担当者
 
-本リポジトリは Issue を無効にしているため、公開の場での報告手段はありません。Pull Request での修正提案も受け付けておりません。
+脆弱性の報告に限っては、Issue や Pull Request など公開の場をお使いにならないようお願いいたします。
 
 ## 対象範囲
 

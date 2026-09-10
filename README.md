@@ -1,5 +1,7 @@
 # team-plus-skills
 
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+
 Findy Team+ のデータを使って開発プロセスを診断・改善する、[Claude Code](https://claude.com/claude-code) 向けの skill 集です。
 
 ## 収録している skill
@@ -69,7 +71,7 @@ skill ごとの詳しい使い方・オプションは、各 skill ディレク�
 
 改善版が出た場合は、リポジトリを取得し直して配置し直してください。閾値やナレッジの更新がそのまま次回の診断に反映されます。
 
-## フィードバック
+## フィードバック・貢献
 
 現時点では試験的な提供です。以下のようなフィードバックを随時歓迎いたします。
 
@@ -77,7 +79,7 @@ skill ごとの詳しい使い方・オプションは、各 skill ディレク�
 - 実態に合わないと感じた基準値
 - 提案された改善策を実際に作りたいと思ったか
 
-**本リポジトリでは GitHub の Issue / Pull Request を受け付けておりません。** お手数ですが、弊社担当者までお寄せください。いただいたご意見は、基準値と提案内容の改善に反映いたします。詳しくは [CONTRIBUTING.md](CONTRIBUTING.md) をご覧ください。
+バグ報告や機能リクエストは [Issues](https://github.com/Findy/team-plus-skills/issues) まで。プルリクエストも歓迎します！ いただいたご意見は、基準値と提案内容の改善に反映いたします。Team+ のご契約に関するご相談は、弊社担当者までお寄せください。
 
 セキュリティ上の問題を見つけた場合は、公開の場ではなく [SECURITY.md](SECURITY.md) の手順に沿ってご報告ください。
 
