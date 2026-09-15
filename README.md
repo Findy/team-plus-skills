@@ -9,6 +9,9 @@ Findy Team+ のデータを使って開発プロセスを診断・改善する�
 | skill | 概要 |
 | --- | --- |
 | [team-plus-impl-diag](skills/team-plus-impl-diag/) | 実装フェーズ（コミット〜マージ）を 11 種類の項目で診断し、課題の整理と改善策の提案を含むレポートを出力します |
+| [team-plus-capital-diag](skills/team-plus-capital-diag/) | 開発資本スコアを org 起点でブレイクダウンし、組織の弱い領域と牽引チームを特定して次アクションを提案します |
+
+capital-diag で組織のどこから改善に着手すべきかを決め、impl-diag で該当チームの実装フェーズを深掘りする 2 段構えで使えます。それぞれ単独でも利用できます。
 
 ## 前提条件
 
