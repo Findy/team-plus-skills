@@ -6,7 +6,7 @@ monitoring_name: null # 診断対象の monitoring 名（個人運用では memo
 period: quarter # 診断期間（quarter = 直近 90 日。終端は実行日-2日）。現時点は quarter のみ対応
 start_date: null # YYYY-MM-DD 形式。指定すると期間の起点を固定します
 scope: all # all | monitorings | repos | members
-existing_skill_roots: null # 既存 skill を探すディレクトリのリスト。null の場合は実行ディレクトリ。各ディレクトリとその直下 1 階層の .claude を見ます
+existing_skill_repos: null # 既存 skill を確認するリポジトリ（ディレクトリ）のリスト。null の場合は実行ディレクトリ。診断対象チームのリポジトリを指定します
 
 # シグナル閾値の上書き。null の場合は SKILL.md 診断コアの既定値を使用します
 thresholds:
