@@ -24,6 +24,7 @@ description: Team+ MCP のデータでチームの実装〜マージプロセス
 | start_date | - | -（終端から逆算） | 期間開始日 YYYY-MM-DD |
 | scope | - | all | all / monitorings / repos / members |
 | thresholds | - | コア定義の既定値 | シグナル閾値の上書き（キーは config/defaults.yml 参照） |
+| human_review_only | - | true | レビュー系の値を人のレビューだけで測るか。`false` で bot のレビュー込み（v3 と同じ取り方）に戻す（下記「レビュー系の値の取得モード」） |
 | existing_skill_repos | - | 実行ディレクトリ | 既存 skill を確認するリポジトリ（ディレクトリ）のリスト。診断対象チームのリポジトリを指定する（「実行手順」1 と「Skills 提案の生成」の「既存 skill 一覧の扱い」参照） |
 
 ## データ解決順
@@ -81,17 +82,18 @@ description: Team+ MCP のデータでチームの実装〜マージプロセス
 | # | ツール | 呼び出し | 依存 | 用途 |
 |---|---|---|---|---|
 | 1 | get_monitorings | 1回 | - | monitoring_name の解決（fuzzy） |
-| 2 | get_team_stats | cur / prev の2回（`start_date`=各期の開始日・range=quarter） | #1 | S1 S4 S10 S11 と、S2 S3 S6 の team 側の値、auto-approve 前提チェックの全体 p50 |
-| 3 | get_team_stat_transitions | 1回（months=6・`start_month`=月次アンカーの月） | #1 | 月次推移章（直近 6 完結暦月）とトレンド分類 |
-| 4 | get_team_member_stats | cur 1回（`start_date`=当期開始・range=quarter） | #1 | S2 S3 S6 のメンバー別の値 |
+| 2 | get_team_stats | cur / prev の2回（`start_date`=各期の開始日・range=quarter・`human_review_only`） | #1 | S1 S4 S10 S11 と、S2 S3 S6 の team 側の値、auto-approve 前提チェックの全体 p50 |
+| 3 | get_team_stat_transitions | 1回（months=6・`start_month`=月次アンカーの月・`human_review_only`） | #1 | 月次推移章（直近 6 完結暦月）とトレンド分類 |
+| 4 | get_team_member_stats | cur 1回（`start_date`=当期開始・range=quarter・`human_review_only`） | #1 | S2 S3 S6 のメンバー別の値 |
 | 5 | get_team_repositories | 1回 | #1 | リポ一覧（repo_id）。#6 とリポジトリ別ドリルダウンの呼び出し単位になる |
-| 6 | get_team_stats | リポごとに2回（cur・`start_date`=当期開始・`repository_ids`=[そのリポ]。percentile_rank 省略= p50 と percentile_rank=90） | #5 | S5（リポ別 p50 / p90 / n_reviewed）と、リポジトリ別ドリルダウンの cur 側 |
+| 6 | get_team_stats | リポごとに2回（cur・`start_date`=当期開始・`repository_ids`=[そのリポ]・`human_review_only`。percentile_rank 省略= p50 と percentile_rank=90） | #5 | S5（リポ別 p50 / p90 / n_reviewed）と、リポジトリ別ドリルダウンの cur 側 |
 | 7 | get_team_ai_usage_stats | 2回（start_date 省略・period=three_months と、月次アンカー指定・period=six_months） | #1 | S7 S9 |
 | 8 | get_team_member_ai_usage_stats | ページ数分（period=three_months） | #1 | S8 S12 と bot 検知 ③ |
 | 9 | get_ai_tool_impact_report | 1回（start_date=当期開始・end_date=当期終端） | #1 | AI 活用章の AI ツール別サイクルタイム（参考情報） |
 | 10 | get_survey_stat_transitions | 1回（start_date=当期開始・end_date=当期終端） | #1 | 体感の裏付け（SPACE カテゴリ別スコア・配信の特定） |
 | 11 | get_survey_question_stats | 1回（start_date=当期開始・end_date=当期終端） | #1 | 体感の裏付け（設問単位のスコア・前回差分） |
 
+- **`human_review_only` は stats 系の全呼び出しに同じ値を渡す**: #2（cur / prev）・#3・#4・#6 と、リポジトリ別ドリルダウンの S1 prev。#3 にも渡すのは、当期の値と月次推移の値の測り方をそろえるため。`false` の場合はパラメータを渡さない（v3 と同じ呼び出しになる）。#7〜#11 には渡さない（下記「レビュー系の値の取得モード」）
 - **並列実行**: #1 の完了後、#2〜#5・#7〜#11 は相互に独立しており並列に呼んでよい。#6 は #5 の repo_id 一覧を待つが、リポ単位では並列可。順序に意味があるのは「#1 → その他」と「#5 → #6」の 2 つだけで、それ以外を直列に実行する理由は無い
 - 取得する stat types（#2〜4）: `prs_created` `prs_merged` `avg_lines_changed_per_pr` `lead_time_pr_to_review` `lead_time_approval_to_merge` `lead_time_to_merge` `avg_time_to_my_review` `reviews_created` `unreviewed_merge_rate`（メンバー側は S2 S3 S6 とガード判定に使う分のみ）。#2 の cur には `percentile_lead_time_pr_to_review` と `lead_time_pr_to_review_sample_size` も加える（percentile_rank 省略 = p50。auto-approve 前提チェックに使う）
 - **scope 指定時はデータ取得も絞る**: 対象章に必要なツール呼び出しのみ行い（monitorings → #1〜3・10・11 / repos → #1・2・5・6・10・11 / members → #1・2・4・7〜11）、取得しなかったデータに依存するシグナルは診断サマリに「scope 対象外」と明記する。#10・#11 は課題マップ（7 章。全 scope で必ず出力する）の体感の裏付けに使うため、どの scope でも呼び出す（ただし取得できるのはサーベイ設定済みの monitoring に限る。下記）
@@ -109,6 +111,19 @@ description: Team+ MCP のデータでチームの実装〜マージプロセス
 - **分担の閾値はページングとは別**: メンバー数 × 日数が目安 1,000 を超える場合は下記「メンバー別 AI 利用データ収集のサブエージェント分担」に従う。これは**メインのコンテキスト量**の話で、上記のページングは**1 レスポンスの上限**の話。1,000 以下でもページングは必須である（`pagination` の total_pages / per_page を読み、per_page は API 側で下げられることがあるため実際に適用された値を確認する）
 - AI 率 = total_ai_pulls_count ÷ total_pulls_count（0 除算に注意。分母 0 は「判定不能」）。**内部では 0〜1 の比として扱う**（S8 の閾値 s8_stddev = 0.3 はこのスケール）。S7 / S9 / S12 の閾値は pt / % 表記なので、比較時に ×100 して揃える。レポートへの表示も % に統一する
 
+### レビュー系の値の取得モード
+
+Team+ MCP の stats 系ツール（get_team_stats / get_team_member_stats / get_team_stat_transitions）は `human_review_only` を受け付ける。`true` にすると、レビュー系の値を**人のレビューだけ**で集計する。人かどうかは「表示対象かつ bot フラグが立っていないメンバー」で判定され、GitHub では `user_type` が `Bot` のアカウント（Copilot を含む）に自動でフラグが付く。
+
+既定を `true` にするのは、Copilot・Codex などの自動レビューが PR ごとにすぐ付くチームでは、bot 込みの値だと「最初のレビューまでが速い」と判定され、人のレビューの滞留を見落とすため。この skill が見たいのは人のレビューの滞留である。
+
+| 値が変わる指標（シグナル） | 値が変わらない指標（シグナル） |
+|---|---|
+| `lead_time_pr_to_review` 系（`percentile_*` / `*_sample_size` を含む。S2・S5・auto-approve 前提チェック）/ `reviews_created`（S3）/ `unreviewed_merge_rate`（S10。`true` では「人のレビューなしでマージされた割合」になる） | `avg_time_to_my_review`（S6）/ `lead_time_approval_to_merge`（S4） |
+
+- 個人の PAT やマシンユーザーでレビューを投稿している自動レビューには bot フラグが立たず、`true` でも人のレビューとして数えられる。このため「bot 検知と除外」（行動パターンによる検知）は `true` でも省かない
+- どちらのモードで取得したかをレポート冒頭の免責に書く（「レポート構成」）
+
 ### メンバー別 AI 利用データ収集のサブエージェント分担
 
 get_team_member_ai_usage_stats（#8）はメンバーごとに period 日数分の `daily[]` を返すため、メンバー数 × 日数が大きい monitoring（目安 1,000 超。例: 12 名 × 92 日）ではレスポンスがメインコンテキストを圧迫する。以下の分担で実行する。
@@ -120,9 +135,9 @@ get_team_member_ai_usage_stats（#8）はメンバーごとに period 日数分�
 - 複数チームを同時に診断する場合はチーム単位に並列化する
 - **中断耐性**: ページごとの集約値は作業用ファイルに書き出し、メインのコンテキストだけに保持しない（セッションの再開や要約で失われると再開できないため）。収集が中断してもページ単位で再開でき、取得済みページの集約値はそのまま再利用して未取得ページのみを取り直す。打ち切った場合は未取得メンバー数をレポートに注記する
 
-### シグナル定義（v3: 12個）
+### シグナル定義（v4: 12個）
 
-閾値は複数組織の実データ探索に基づく暫定値。thresholds で上書き可能（括弧内はキー名）。シグナルの構成と既定閾値は v2 から不変（S12 は v2 で追加）だが、v3 では S8 の stddev の母集団、S12 の月次バケットの扱い、トレンド分類の単調性・スパイク判定の比較対象といった**指標の算出規定**を確定させた。同じ入力でも v2 とは発火集合が変わり得るため版を上げている（下記「版を上げる条件」）。
+閾値は複数組織の実データ探索に基づく暫定値。thresholds で上書き可能（括弧内はキー名）。シグナルの構成と既定閾値は v2 から不変（S12 は v2 で追加）だが、v3 では S8 の stddev の母集団、S12 の月次バケットの扱い、トレンド分類の単調性・スパイク判定の比較対象といった**指標の算出規定**を確定させた。v4 ではレビュー系の値を既定で人のレビューだけで取得するようにした（上記「レビュー系の値の取得モード」）。いずれも同じ入力で前の版とは発火集合が変わり得るため版を上げている（下記「版を上げる条件」）。
 
 | ID | 課題ラベル | カテゴリ | 定義・閾値 | 判定ガード |
 |---|---|---|---|---|
@@ -135,7 +150,7 @@ get_team_member_ai_usage_stats（#8）はメンバーごとに period 日数分�
 | S7 | ai-usage-drop | AI 活用 | 月次 AI 率が隣接月比 -20pt 以上低下（s7_drop_pt）。判定は直近 3 バケットの隣接比のみ | AI 系共通前提（下記） |
 | S8 | ai-usage-gap | AI 活用 | 個人 AI 率の stddev > 0.3（s8_stddev）、または 0% メンバーが2名以上 | stddev・0% 判定とも **bot 除外後**かつ total_pulls_count ≥ 10 の母集団で算出。AI 系共通前提 |
 | S9 | low-ai-usage | AI 活用 | チーム AI 率 < 30%（s9_rate_pct） | AI 系共通前提 |
-| S10 | unreviewed-merges | レビュー形骸化 | unreviewed_merge_rate > 30% で注意（s10_warn_rate_pct）、> 60% でプロセス不全か意図的運用かの確認を促す（s10_check_rate_pct） | - |
+| S10 | unreviewed-merges | レビュー形骸化 | 人のレビューなしでマージされた割合（unreviewed_merge_rate。`human_review_only=false` では bot のレビューもレビュー済みに数える）> 30% で注意（s10_warn_rate_pct）、> 60% でプロセス不全か意図的運用かの確認を促す（s10_check_rate_pct）。レポートには、どちらの意味の割合かを注記する | - |
 | S11 | closed-without-merge | PR 設計・分割 | prs_merged ÷ prs_created < 70%（s11_merge_rate_pct） | - |
 | S12 | individual-ai-drop | AI 活用 | 個人の月次 AI 率が隣接月比 -30pt 以上低下（s12_drop_pt）。月次の算出は「個人の月次 AI 率（S12・#8）」の規定に従い、判定は直近 3 バケットの隣接比のみ | 比較する両月とも個人 total_pulls_count ≥ 10（s12_min_monthly_pulls）。**bot 除外後**。AI 系共通前提（下記）。チーム率が高くても個人の離脱は起きるため S7 と独立に判定する。レポートは急落幅の大きい順に上位3名まで |
 
@@ -153,9 +168,10 @@ get_team_member_ai_usage_stats（#8）はメンバーごとに period 日数分�
 - bot / 非人間アカウントは下記「bot 検知と除外」に従って検知し、メンバー別シグナル（S2 / S3 / S6 / S8 / S12）の母数から除外する
 - 新設チーム等で prev 期間のデータが無い場合、Δ系（S1）は判定せず「取れていない情報」に分類する
 - **AI 系共通前提（S7〜S9・S12）**: チームの total_pulls_count > 0 を判定の前提とする。満たさない場合は「0%」ではなく「判定不能」と診断する
-- **auto-approve 前提チェック**: レビューリードタイム系（S2 / S5）は「レビューが実質行われている」ことを前提とする。チーム全体の p50 lead_time_pr_to_review（#2 cur の `percentile_lead_time_pr_to_review`）< 0.5h（auto_approve_p50_hours）**のみで判定する**。該当する場合は S2 / S5 を判定せず、auto-approve / bot レビュー文化の可能性をレポートに注記する
+- **auto-approve 前提チェック**: レビューリードタイム系（S2 / S5）は「レビューが実質行われている」ことを前提とする。チーム全体の p50 lead_time_pr_to_review（#2 cur の `percentile_lead_time_pr_to_review`）< 0.5h（auto_approve_p50_hours）**のみで判定する**。該当する場合は S2 / S5 を判定せず、人による即時承認の運用の可能性をレポートに注記する（`human_review_only=false` の場合は、auto-approve / bot レビュー文化の可能性も併記する）
   - p50 は #2 で取得するため、どの scope でもこのチェックを同じ基準で行える
   - team avg での代用・OR 条件の追加はしない（偽陰性になる理由は `knowledge/design_notes.md`）
+  - `human_review_only=true` でもチェック自体は残す（人が即時に承認する運用でも p50 < 0.5h になるため。理由は `knowledge/design_notes.md`）
 
 ### bot 検知と除外
 
@@ -221,7 +237,7 @@ get_team_member_ai_usage_stats（#8）はメンバーごとに period 日数分�
 
 **リポジトリ別ドリルダウン**: S1 または S10 が発火した場合、リポ別の値から牽引リポを特定して課題マップの根拠に記載する。cur 側の値は #6 に同梱済みのため、追加で呼ぶのは S1 の prev 側だけ。
 
-- S1: #6 の cur 値（`avg_lines_changed_per_pr` / `prs_created`）に加え、リポごとに prev（`start_date`=前期開始・range=quarter・`repository_ids`=[そのリポ]）を 1 回呼ぶ。cur の prs_created = 0 のリポは増加の牽引になり得ないため prev を省略する。並び順は「Δ（cur − prev）× cur の prs_created」の降順、記載は**上位 3 リポまで**
+- S1: #6 の cur 値（`avg_lines_changed_per_pr` / `prs_created`）に加え、リポごとに prev（`start_date`=前期開始・range=quarter・`repository_ids`=[そのリポ]・`human_review_only`）を 1 回呼ぶ。cur の prs_created = 0 のリポは増加の牽引になり得ないため prev を省略する。並び順は「Δ（cur − prev）× cur の prs_created」の降順、記載は**上位 3 リポまで**
   - **prev の prs_created = 0 のリポ（当期に新設・稼働開始したリポ）は Δ を算出できない**。`avg_lines_changed_per_pr` は PR が 0 件だと 0 で返るため、そのまま引くと「0 からの増加」という誤った Δ になり、牽引リポの順位を歪める。該当リポは順位付けから除外し、**cur の値と PR 数だけを「取れていない情報」章に列挙**する（当期の変更行数が大きければ実質的な増加要因ではあるため、伏せない）
 - S10: #6 の cur 値（`unreviewed_merge_rate` / `prs_merged`）を使い、追加の呼び出しは行わない。並び順は「unreviewed_merge_rate × prs_merged」の降順、記載は**上位 3 リポまで**
 - prs_created（S10 では prs_merged）< 20 のリポは、値の解釈に注意が要る旨を添える
@@ -230,7 +246,7 @@ get_team_member_ai_usage_stats（#8）はメンバーごとに period 日数分�
 
 ### 体感の裏付け（サーベイ）
 
-定量シグナルにサーベイ（開発者体験の定性データ）を突き合わせ、課題マップの各課題に「体感の裏付け」を付与する工程。**シグナルの判定そのものには使わない**（発火集合はこの工程の結果で増減も反転もしない。シグナルセット版が v3 のままである根拠）。定量と定性の**不一致こそ情報**として扱う。
+定量シグナルにサーベイ（開発者体験の定性データ）を突き合わせ、課題マップの各課題に「体感の裏付け」を付与する工程。**シグナルの判定そのものには使わない**（発火集合はこの工程の結果で増減も反転もしない。この工程の追加でシグナルセット版を上げなかった根拠）。定量と定性の**不一致こそ情報**として扱う。
 
 **対象配信**: #10 の `transitions` から当期窓（deadline ベースで API がフィルタ済み）の**最新配信のみ**を使う（昇順で返るため配列末尾）。配信周期は組織設定で可変（窓内 0〜3 件になりうる）だが、古い配信は判定に使わない。使用した配信の deadline と response_rate を必ずレポートに注記する（回答率の固定閾値は置かず、実測値の注記で読み手が代表性を割り引けるようにする）。
 
@@ -314,6 +330,7 @@ get_team_member_ai_usage_stats（#8）はメンバーごとに period 日数分�
 4. データ集計遅延により直近2日を除外していること
 5. p50 / p90 は Team+ API のサーバ側 percentile 集計値であること（算出方法の詳細は非公開）
 6. 体感の裏付けはサーベイの最新配信 1 件の集計値に基づき、回答率により代表性が変わること（使用した配信の deadline と回答率を併記）。裏付けを付与できなかった場合はその理由
+7. レビュー系の値の取得モード（`human_review_only=true`: 人のレビューのみ / `false`: bot のレビュー込み）と、値が変わる指標（「レビュー系の値の取得モード」の表）
 
 章立て。**1・2・7・8・9 章は scope に関わらず必ず出力する**（当期のチーム統計 #2 はどの scope でも取得し、課題マップ・Skills 提案・取れていない情報は診断の結論そのものであるため。これらを落とすと「再現性の担保単位」の主判定が scope 指定時に定義できなくなる）。scope で増減するのは 3〜6 章だけで、monitorings → 3章 / repos → 5章 / members → 4・6章 を加える（scope=all は 1〜9 章すべて）。**見出しは「見出し文字列」列の値をそのまま使い、説明を書き足さない**（`## 1. 診断サマリ` の形式。診断間の比較に見出しを使うため）:
 
@@ -332,7 +349,7 @@ get_team_member_ai_usage_stats（#8）はメンバーごとに period 日数分�
 「1. 診断サマリ」の先頭には、以下 4 行を**この書式のまま**必ず出力する（診断間の比較を機械的に行うため）。
 
 ```
-シグナルセット: v3
+シグナルセット: v4
 裏付けレイヤー: あり
 発火シグナル ID 集合: {S2, S6}
 判定対象外: {S5}
@@ -340,7 +357,7 @@ get_team_member_ai_usage_stats（#8）はメンバーごとに period 日数分�
 
 - 「シグナルセット」は本 SKILL.md のシグナル定義の版。ID 集合の比較は同一版の診断間でのみ有効で、版が異なる診断と比較する場合は両版に共通するシグナルに限定し、その旨を注記する
 - 「裏付けレイヤー」は体感の裏付け工程を実行できたかどうか（`あり` / `なし`）。サーベイ未実施・未設定・閲覧権限なし（エラー）・判定不能の場合は `なし`。裏付けレイヤーは発火集合に影響しないためシグナルセット版とは独立で、`なし` の診断と `あり` の診断も発火シグナル ID 集合の比較は成立する
-- **版を上げる条件**: シグナルの追加・削除、既定閾値の変更、判定ガードの変更、指標の算出規定の変更のいずれかを行ったら版を上げる。文言整理・根拠説明の追記など、同じ入力から同じ発火集合が出る変更では上げない。実行時の thresholds 上書きは版に影響しない（同一版のまま、上書きした値をレポートに明記する）
+- **版を上げる条件**: シグナルの追加・削除、既定閾値の変更、判定ガードの変更、指標の算出規定の変更のいずれかを行ったら版を上げる。文言整理・根拠説明の追記など、同じ入力から同じ発火集合が出る変更では上げない。実行時の thresholds 上書きは版に影響しない（同一版のまま、上書きした値をレポートに明記する）。`human_review_only` の指定も版に影響しないが、値が異なる診断間では発火シグナル ID 集合を比較しない（同じ版でもレビュー系の値の母集合が異なるため）
 - ID は昇順に並べる。該当が無ければ `{}` と書く（「なし」等に言い換えない）
 - 「判定対象外」はガード・scope・前提チェックにより判定しなかったシグナル。不発火（判定した上で閾値未満）とは区別する
 - 「8. Skills 提案」の表には提案エントリ ID の列と「既存の類似 skill」列を置く
