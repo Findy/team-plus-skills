@@ -84,6 +84,7 @@ skill のディレクトリ一式を `~/.claude/skills/team-plus-impl-diag/` に
 | start_date | 終端から逆算 | 期間開始日 YYYY-MM-DD |
 | scope | all | all / monitorings / repos / members |
 | thresholds | 既定値 | シグナル閾値の上書き（キーは `config/defaults.yml` をご覧ください） |
+| human_review_only | true | レビュー系の値を人のレビューだけで測ります（下記「bot のレビューの扱い」をご覧ください） |
 | existing_skill_repos | 実行ディレクトリ | 既存の skill を確認するリポジトリのリスト（下記「既存の skill を踏まえた提案」をご覧ください） |
 
 例:
@@ -91,6 +92,15 @@ skill のディレクトリ一式を `~/.claude/skills/team-plus-impl-diag/` に
 - `impl-diag` — memory の monitoring を既定期間で診断します
 - 「<チーム名> の実装プロセスを診断して」
 - 「<チーム名> を scope=repos で診断して」— リポジトリ別のレビュー滞留だけを確認します（API 呼び出しを削減できます）
+
+### bot のレビューの扱い
+
+既定では、レビュー系の値（最初のレビューまでの時間・レビュー数・レビューなしでマージされた割合）を**人のレビューだけ**で測ります。Copilot・Codex などの自動レビューが PR ごとにすぐ付くチームでも、人のレビューの滞留を見落とさないためです。承認からマージまでの時間と、各メンバーがレビューに着手するまでの時間は、この設定で値が変わりません。
+
+bot のレビューも含めて測りたい場合は、実行時に「`human_review_only=false` で診断して」と伝えるか、`memory.yml` に `human_review_only: false` と書いてください。
+
+- 人かどうかは、Team+ のメンバーの bot フラグで判定されます。GitHub では Bot 種別のアカウント（Copilot を含む）に自動でフラグが付きます。個人のアクセストークンやマシンユーザーで投稿している自動レビューは、人のレビューとして数えられます
+- どちらで測ったかは、レポートの冒頭に表示されます
 
 ### 既存の skill を踏まえた提案
 
